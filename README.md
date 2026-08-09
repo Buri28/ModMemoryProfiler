@@ -33,31 +33,6 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 - 起動時から存在するアセットは生成をフックできないため `(Untracked)` になる。
   絶対値ではなく**スナップショット間の差分**で見ること。
 
-## ビルド
-
-参照する DLL は全て Beat Saber のインストール先にあるため、外部 SDK は不要。
-
-```
-build.bat            # Debug ビルド → Plugins へ自動コピー
-build.bat Release
-```
-
-`BeatSaberPath` の既定は `D:\BSManager\BSInstances\1.40.8`。別の場所にインストールしている場合は、
-次のいずれかで上書きする。
-
-1. リポジトリ直下に `BeatSaberPath.props` を置く（`.gitignore` 済み）
-
-   ```xml
-   <Project>
-     <PropertyGroup>
-       <BeatSaberPath>C:\Program Files (x86)\Steam\steamapps\common\Beat Saber</BeatSaberPath>
-     </PropertyGroup>
-   </Project>
-   ```
-
-2. 環境変数 `BEATSABER_PATH` を設定する
-3. `dotnet build -p:BeatSaberPath=...` で渡す
-
 ## 出力
 
 `<BeatSaberPath>\UserData\ModMemoryProfiler\session_yyyyMMdd_HHmmss.csv`
