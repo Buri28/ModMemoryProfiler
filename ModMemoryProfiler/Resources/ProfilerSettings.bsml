@@ -1,0 +1,80 @@
+<bg>
+  <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
+
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='ModMemoryProfiler' font-size='5' color='#FFFFFF' />
+    </horizontal>
+
+    <!-- ───────── 計測結果 ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text text='[Top Mods by growth]' color='#FF8C00' font-size='4' />
+    </horizontal>
+
+    <!-- ベースライン局面からの増分MBで降順。赤 = 1MB以上増えているMOD。
+         注意: ここに pref-height を書いてはいけない。settings-container は子の高さを
+         コンテンツから自動計算しており、pref-height を明示するとその計算が効かなくなって
+         高さが潰れ、後続の要素（Refresh・[Settings]）と重なる。
+         行数は TopModCount で調整すること（タブ自体はスクロールする）。 -->
+    <horizontal spacing='0' pad='0'>
+      <text id='report-text' text='~reportText'
+            font-size='3' align='TopLeft' word-wrapping='false' />
+    </horizontal>
+
+    <horizontal spacing='1' pad='0'>
+      <button text='Refresh' pref-width='30' pref-height='6' on-click='on-refresh'
+              hover-hint='Take a snapshot right now and update the list above. Also appends a row to the CSV with phase=manual.' />
+    </horizontal>
+
+    <horizontal spacing='1' pad='0'>
+      <text text='+MB = growth vs baseline / bnd = unfreed AssetBundles'
+            color='#AAAAAA' font-size='2.6' />
+    </horizontal>
+
+    <!-- ───────── 設定 ───────── -->
+    <horizontal spacing='1' pad='0' pad-top='2'>
+      <text text='[Settings]' color='#00FFFF' />
+    </horizontal>
+
+    <toggle-setting text='Sample During Song'
+                    value='sampleDuringSong'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Also take snapshots while playing. The scan walks tens of thousands of objects and can drop a frame, so this is OFF by default. The snapshot right after a song is always taken regardless.' />
+
+    <toggle-setting text='Track Ownership'
+                    value='trackOwnership'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Record which mod created each asset. Turning this OFF leaves you with totals only, no per-mod attribution.' />
+
+    <toggle-setting text='Track Instantiate'
+                    value='trackInstantiate'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Also hook Object.Instantiate. This is the hottest path (notes spawn every frame) - turn it OFF first if songs feel heavy. Takes effect on next game start.' />
+
+    <toggle-setting text='CPU Profiling'
+                    value='enableCpuProfiling'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Measure Update/LateUpdate/FixedUpdate time per mod. Takes effect on next game start.' />
+
+    <toggle-setting text='Debug Logging'
+                    value='debugLogging'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='Write verbose diagnostics to the BSIPA log (which hooks were applied, census counts).' />
+
+    <increment-setting text='Sample Interval (sec)'
+                       value='sampleIntervalSeconds'
+                       apply-on-change='true'
+                       on-change='on-sample-interval-changed'
+                       formatter='FormatInt'
+                       min='5' max='300' increment='5'
+                       hover-hint='How often to take a snapshot.' />
+
+    <!-- 下が切れるのでスペーサー -->
+    <button text='' pref-width='15' pref-height='8' interactable='false' />
+
+  </settings-container>
+</bg>
