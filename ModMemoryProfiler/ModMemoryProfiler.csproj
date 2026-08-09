@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>ModMemoryProfiler</AssemblyName>
+    <RootNamespace>ModMemoryProfiler</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <OutputPath>bin\$(Configuration)\$(TargetFramework)\</OutputPath>
+  </PropertyGroup>
+
+  <!-- Beat Saber のインストール先。参照する DLL は全てゲーム内にあるので、外部の SDK は不要。
+       既定は開発機のパス。別環境では次のいずれかで上書きする:
+         1. リポジトリ直下に BeatSaberPath.props を置く（.gitignore 済み）
+         2. 環境変数 BEATSABER_PATH
+         3. ビルド時に -p:BeatSaberPath=... -->
+  <Import Project="$(MSBuildThisFileDirectory)..\BeatSaberPath.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\BeatSaberPath.props')" />
+
+  <PropertyGroup>
+    <BeatSaberPath Condition="'$(BeatSaberPath)' == ''">$(BEATSABER_PATH)</BeatSaberPath>
+    <BeatSaberPath Condition="'$(BeatSaberPath)' == ''">D:\BSManager\BSInstances\1.40.8</BeatSaberPath>
+    <BeatSaberManagedPath>$(BeatSaberPath)\Beat Saber_Data\Managed</BeatSaberManagedPath>
+    <BeatSaberPluginsPath>$(BeatSaberPath)\Plugins</BeatSaberPluginsPath>
+  </PropertyGroup>
+
+  <Target Name="CheckBeatSaberPath" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(BeatSaberManagedPath)')"
+           Text="Beat Saber install not found at '$(BeatSaberPath)'. Set BeatSaberPath via BeatSaberPath.props, the BEATSABER_PATH environment variable, or -p:BeatSaberPath=... See README.md." />
+  </Target>
+
+  <ItemGroup>
+    <!-- Unity 本体。Profiler.GetRuntimeMemorySizeLong / Resources.FindObjectsOfTypeAll はここ -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <!-- IPA / BSIPA -->
+    <Reference Include="IPA.Loader">
+      <HintPath>$(BeatSaberManagedPath)\IPA.Loader.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+
+    <!-- Harmony -->
+    <Reference Include="0Harmony">
+      <HintPath>$(BeatSaberPath)\Libs\0Harmony.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ゲーム内タブ（GameplaySetup）用。実機の Plugins に置かれているものを参照する -->
+    <Reference Include="BSML">
+      <HintPath>$(BeatSaberPluginsPath)\BSML.dll</HintPath>
+      <Private>False</Private>
+      <SpecificVersion>False</SpecificVersion>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(BeatSaberManagedPath)\Unity.TextMeshPro.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(BeatSaberManagedPath)\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="HMUI">
+      <HintPath>$(BeatSaberManagedPath)\HMUI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="manifest.json" />
+    <EmbeddedResource Include="Resources\ProfilerSettings.bsml">
+      <LogicalName>ModMemoryProfiler.Resources.ProfilerSettings.bsml</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

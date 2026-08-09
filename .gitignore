@@ -1,0 +1,26 @@
+## Visual Studio / .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+
+## JetBrains Rider
+.idea/
+*.sln.iml
+
+## VSCode
+.vscode/launch.json
+
+## Logs
+*.log
+
+## 計測結果（各自の環境依存なのでコミットしない）
+*.csv
+
+## Claude Code (local notes / design docs - not for publication)
+.claude/
+
+## Local machine paths (never commit)
+BeatSaberPath.props

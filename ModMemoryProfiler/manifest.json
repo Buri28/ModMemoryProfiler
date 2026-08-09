@@ -1,0 +1,17 @@
+{
+  "author": "Buri28",
+  "description": "MOD別のアセットメモリ使用量とフレーム時間を計測し、メモリリークしているMODを特定するための診断MOD（CSV出力）",
+  "gameVersion": "1.40.8",
+  "id": "ModMemoryProfiler",
+  "name": "ModMemoryProfiler",
+  "version": "0.1.0",
+  "dependsOn": {
+    "BSIPA": "^4.3.0",
+    "BeatSaberMarkupLanguage": "^1.12.0"
+  },
+  "features": {},
+  "loadBefore": [],
+  "loadAfter": [
+    "BeatSaberMarkupLanguage"
+  ]
+}
