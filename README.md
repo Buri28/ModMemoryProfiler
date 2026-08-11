@@ -8,6 +8,11 @@ Beat Saber で「長時間プレイするとカクつく」原因MODを特定す
 
 対象: Beat Saber 1.40.8 / BSIPA 4.3+ / BSML 1.12+
 
+[イメージ]
+
+<img width="44%" height="44%" alt="image" src="https://github.com/user-attachments/assets/4ae8809c-f9ec-45af-8b48-a65197715728" />
+
+
 ## これは何をするMODか
 
 Mono の GC ヒープは全MOD共有なので、後からメモリを見ても「どのMODが食っているか」は分からない。
@@ -90,6 +95,8 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 `vs songEnd` になるまでは、表示される増分にメニューのロード分が含まれるので判定に使えない。
 
 ## 設定
+
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/c419e305-1797-45f4-affa-a1dbe361a9a6" />
 
 `UserData/ModMemoryProfiler.json`（ゲーム内UIからも変更可能）
 
