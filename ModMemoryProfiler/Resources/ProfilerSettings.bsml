@@ -1,12 +1,11 @@
 <bg>
   <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
 
+    <!-- Refresh はタブの最上段に置く。VR では下へ行くほど押しづらく、
+         結果を見ながら何度も押すボタンなので、スクロールせずに届く位置に固定する。 -->
     <horizontal spacing='1' pad='0' pad-top='1'>
-      <text text='ModMemoryProfiler' font-size='5' color='#FFFFFF' />
-    </horizontal>
-
-    <!-- ───────── 計測結果 ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='1'>
+      <button text='Refresh' pref-width='30' pref-height='6' on-click='on-refresh'
+              hover-hint='Take a snapshot right now and update the list below. Also appends a row to the CSV with phase=manual.' />
       <text text='[Top Mods by growth]' color='#FF8C00' font-size='4' />
     </horizontal>
 
@@ -18,11 +17,6 @@
     <horizontal spacing='0' pad='0'>
       <text id='report-text' text='~reportText'
             font-size='3' align='TopLeft' word-wrapping='false' />
-    </horizontal>
-
-    <horizontal spacing='1' pad='0'>
-      <button text='Refresh' pref-width='30' pref-height='6' on-click='on-refresh'
-              hover-hint='Take a snapshot right now and update the list above. Also appends a row to the CSV with phase=manual.' />
     </horizontal>
 
     <horizontal spacing='1' pad='0'>
