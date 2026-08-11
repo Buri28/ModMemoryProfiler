@@ -162,7 +162,10 @@ namespace ModMemoryProfiler.Profiling
                 }
                 catch { /* フォールバックへ */ }
             }
-            return Estimate(obj);
+
+            // 概算側も native プロパティを触るので、破棄済みオブジェクト等で落ちないよう包む
+            try { return Estimate(obj); }
+            catch { return 0; }
         }
 
         // フォールバック用の概算。テクスチャのみ意味のある値を返す。
@@ -174,6 +177,13 @@ namespace ModMemoryProfiler.Profiling
                               * (t2d.mipmapCount > 1 ? 4.0 / 3.0 : 1.0));
             if (obj is RenderTexture rt)
                 return (long)rt.width * rt.height * (rt.depth > 0 ? 8 : 4) * Math.Max(1, rt.antiAliasing);
+
+            // AudioClip は GetRuntimeMemorySizeLong が 0 を返すため、実測では audioMB が
+            // 常に 0 になっていた。PCM 16bit 換算で概算する。
+            // 圧縮のままメモリに載っている場合は過大評価になるが、0 のまま見落とすより良い。
+            if (obj is AudioClip clip)
+                return (long)clip.samples * clip.channels * 2;
+
             return 0;
         }
 

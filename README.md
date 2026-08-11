@@ -50,13 +50,19 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 
 `(TOTAL)` 行だけは列を流用しているので注意:
 
-- `textureMB` = マネージドヒープ MB
-- `renderTextureMB` = Mono 使用量 MB
-- `materialCount` / `gameObjectCount` / `monoBehaviourCount` = GC Gen0 / Gen1 / Gen2 の回数
-- `unfreedBundles` = レート制限で生成元の記録を見送った累計件数
+| 列 | `(TOTAL)` 行での意味 |
+|---|---|
+| `textureMB` | マネージドヒープ MB（`GC.GetTotalMemory`） |
+| `renderTextureMB` | Unity の確保総量 MB（ネイティブ側を含む） |
+| `materialCount` | GC 回数。Unity の GC は世代を持たないため 1 種類のみ |
+| `gameObjectCount` / `monoBehaviourCount` | 全MOD合計のインスタンス数 |
+| `unfreedBundles` | レート制限で生成元の記録を見送った累計件数 |
 
-最後の値が 0 でない場合、MOD別の数値はその分だけ `(Untracked)` に逃げている。
-`MaxOwnershipLookupsPerSecond` を上げて測り直すこと。
+マネージドヒープが横ばいなのに Unity の確保総量だけ増える場合、ネイティブ側のリーク。
+`gameObjectCount` / `monoBehaviourCount` が曲数に比例して増える場合はマネージド側の解放漏れ。
+
+`(TOTAL)` 行の `unfreedBundles` が 0 でない場合、MOD別の数値はその分だけ `(Untracked)` に
+逃げている。`MaxOwnershipLookupsPerSecond` を上げて測り直すこと。
 
 ## 見方
 

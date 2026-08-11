@@ -26,6 +26,16 @@
     <BeatSaberPluginsPath>$(BeatSaberPath)\Plugins</BeatSaberPluginsPath>
   </PropertyGroup>
 
+  <!-- .bsml の構文ミスはコンパイルでは検出されず、実機でタブを開いたときに初めて
+       XmlException として落ちる（画面には何も出ない）。ビルド時に必ず検査する。 -->
+  <ItemGroup>
+    <BsmlFile Include="Resources\**\*.bsml" />
+  </ItemGroup>
+
+  <Target Name="ValidateBsml" BeforeTargets="BeforeBuild" Condition="'@(BsmlFile)' != ''">
+    <XmlPeek XmlInputPath="%(BsmlFile.FullPath)" Query="/*" />
+  </Target>
+
   <Target Name="CheckBeatSaberPath" BeforeTargets="BeforeBuild">
     <Error Condition="!Exists('$(BeatSaberManagedPath)')"
            Text="Beat Saber install not found at '$(BeatSaberPath)'. Set BeatSaberPath via BeatSaberPath.props, the BEATSABER_PATH environment variable, or -p:BeatSaberPath=... See README.md." />

@@ -179,7 +179,7 @@ namespace ModMemoryProfiler.Profiling
                         s.LiveAssetCount, s.UnfreedBundles, s.MsPerFrame);
                 }
 
-                WriteTotalRow(now, elapsedMin, phase);
+                WriteTotalRow(now, elapsedMin, phase, stats);
                 _sink.Flush();
 
                 _latest = stats;
@@ -204,26 +204,44 @@ namespace ModMemoryProfiler.Profiling
         }
 
         // プロセス全体の値。mod 列を "(TOTAL)" として同じ CSV に混ぜる。
-        // managedHeapMB は textureMB 列、monoUsedMB は renderTextureMB 列…のように
-        // 既存の数値列を流用する（列を増やさず、フィルタ一発で分離できるようにするため）。
-        private void WriteTotalRow(DateTime now, double elapsedMin, string phase)
+        // 列は増やさず、既存の数値列を流用する（フィルタ一発で分離できるようにするため）。
+        // どの列が何を意味するかは README の「(TOTAL) 行」の表と必ず一致させること。
+        private void WriteTotalRow(DateTime now, double elapsedMin, string phase,
+                                   Dictionary<string, ModStats> stats)
         {
             long managedHeap = GC.GetTotalMemory(false);
-            long monoUsed;
-            try { monoUsed = Profiler.GetMonoUsedSizeLong(); }
-            catch { monoUsed = 0; }
+
+            // Unity が確保している総量（ネイティブ側を含む）。
+            // 以前はここに Profiler.GetMonoUsedSizeLong を入れていたが、Unity の Mono では
+            // GC.GetTotalMemory と完全に同じ値を返し、1列まるごと無駄になっていた。
+            // ネイティブ側の増加はマネージドヒープには出ないので、そちらを見る方が有用。
+            long unityAllocated;
+            try { unityAllocated = Profiler.GetTotalAllocatedMemoryLong(); }
+            catch { unityAllocated = 0; }
+
+            // 全MODを合計したオブジェクト数。リーク判定で最初に見るのがこの2つなのに、
+            // 従来は CSV から手で足し合わせる必要があった。
+            int totalGameObjects = 0;
+            int totalMonoBehaviours = 0;
+            foreach (ModStats s in stats.Values)
+            {
+                totalGameObjects += s.GameObjectCount;
+                totalMonoBehaviours += s.MonoBehaviourCount;
+            }
 
             _sink!.WriteRow(now, elapsedMin, phase, _songsPlayed, "(TOTAL)",
-                textureBytes: managedHeap,          // = managedHeapMB
-                renderTextureBytes: monoUsed,       // = monoUsedMB
+                textureBytes: managedHeap,            // = managedHeapMB
+                renderTextureBytes: unityAllocated,   // = unityAllocatedMB（ネイティブ含む）
                 meshBytes: 0,
                 audioBytes: 0,
-                materialCount: GC.CollectionCount(0),
-                gameObjectCount: GC.CollectionCount(1),
-                monoBehaviourCount: GC.CollectionCount(2),
+                // Unity の GC は Boehm で世代を持たないため、CollectionCount(0/1/2) は
+                // 全て同じ値になる。3列に分けても情報が増えないので 1 列だけ使う。
+                materialCount: GC.CollectionCount(0),  // = gcCount
+                gameObjectCount: totalGameObjects,
+                monoBehaviourCount: totalMonoBehaviours,
                 liveAssetCount: OwnershipTracker.TrackedCount,
-                // TOTAL 行では unfreedBundles 列を「レート制限で帰属を諦めた累計件数」に流用する。
-                // 0 でない場合、MOD別の数値はその分だけ (Untracked) に逃げている。
+                // 「レート制限で帰属を諦めた累計件数」を流用。0 でない場合、
+                // MOD別の数値はその分だけ (Untracked) に逃げている。
                 unfreedBundles: (int)Math.Min(int.MaxValue, OwnershipTracker.SkippedLookups),
                 msPerFrame: 0);
         }
