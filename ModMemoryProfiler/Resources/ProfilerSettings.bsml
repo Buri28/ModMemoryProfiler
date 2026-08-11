@@ -20,7 +20,7 @@
     </horizontal>
 
     <horizontal spacing='1' pad='0'>
-      <text text='+MB = growth vs baseline / bnd = unfreed AssetBundles'
+      <text text='+num = live objects gained vs baseline (main leak signal) / sprite = current sprite count'
             color='#AAAAAA' font-size='2.6' />
     </horizontal>
 

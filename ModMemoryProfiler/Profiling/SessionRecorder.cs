@@ -177,13 +177,7 @@ namespace ModMemoryProfiler.Profiling
                 double elapsedMin = (now - _startedAt).TotalMinutes;
 
                 foreach (var kv in stats)
-                {
-                    ModStats s = kv.Value;
-                    _sink.WriteRow(now, elapsedMin, phase, _songsPlayed, kv.Key,
-                        s.TextureBytes, s.RenderTextureBytes, s.MeshBytes, s.AudioBytes,
-                        s.MaterialCount, s.GameObjectCount, s.MonoBehaviourCount,
-                        s.LiveAssetCount, s.UnfreedBundles, s.MsPerFrame);
-                }
+                    _sink.WriteRow(now, elapsedMin, phase, _songsPlayed, kv.Key, kv.Value);
 
                 WriteTotalRow(now, elapsedMin, phase, stats);
                 _sink.Flush();
@@ -225,31 +219,32 @@ namespace ModMemoryProfiler.Profiling
             try { unityAllocated = Profiler.GetTotalAllocatedMemoryLong(); }
             catch { unityAllocated = 0; }
 
-            // 全MODを合計したオブジェクト数。リーク判定で最初に見るのがこの2つなのに、
-            // 従来は CSV から手で足し合わせる必要があった。
-            int totalGameObjects = 0;
-            int totalMonoBehaviours = 0;
+            // 個数列は全MODの素直な合計を入れる（意味の流用なし）。
+            // リーク判定で最初に見るのがここなのに、従来は手で足し合わせる必要があった。
+            var t = new ModStats();
             foreach (ModStats s in stats.Values)
             {
-                totalGameObjects += s.GameObjectCount;
-                totalMonoBehaviours += s.MonoBehaviourCount;
+                t.TextureCount += s.TextureCount;
+                t.RenderTextureCount += s.RenderTextureCount;
+                t.SpriteCount += s.SpriteCount;
+                t.MeshCount += s.MeshCount;
+                t.AudioCount += s.AudioCount;
+                t.GameObjectCount += s.GameObjectCount;
+                t.MonoBehaviourCount += s.MonoBehaviourCount;
             }
 
-            _sink!.WriteRow(now, elapsedMin, phase, _songsPlayed, "(TOTAL)",
-                textureBytes: managedHeap,            // = managedHeapMB
-                renderTextureBytes: unityAllocated,   // = unityAllocatedMB（ネイティブ含む）
-                meshBytes: 0,
-                audioBytes: 0,
-                // Unity の GC は Boehm で世代を持たないため、CollectionCount(0/1/2) は
-                // 全て同じ値になる。3列に分けても情報が増えないので 1 列だけ使う。
-                materialCount: GC.CollectionCount(0),  // = gcCount
-                gameObjectCount: totalGameObjects,
-                monoBehaviourCount: totalMonoBehaviours,
-                liveAssetCount: OwnershipTracker.TrackedCount,
-                // 「レート制限で帰属を諦めた累計件数」を流用。0 でない場合、
-                // MOD別の数値はその分だけ (Untracked) に逃げている。
-                unfreedBundles: (int)Math.Min(int.MaxValue, OwnershipTracker.SkippedLookups),
-                msPerFrame: 0);
+            // 以下は意味を流用している列。README の「(TOTAL) 行」の表と必ず一致させること。
+            t.TextureBytes = managedHeap;          // = managedHeapMB
+            t.RenderTextureBytes = unityAllocated; // = unityAllocatedMB（ネイティブ含む）
+            // Unity の GC は Boehm で世代を持たないため CollectionCount(0/1/2) は全て同値。
+            // 3列に分けても情報が増えないので 1 列だけ使う。
+            t.MaterialCount = GC.CollectionCount(0);
+            t.LiveAssetCount = OwnershipTracker.TrackedCount;
+            // レート制限で帰属を諦めた累計件数。0 でない場合、MOD別の数値は
+            // その分だけ (Untracked) に逃げている。
+            t.UnfreedBundles = (int)Math.Min(int.MaxValue, OwnershipTracker.SkippedLookups);
+
+            _sink!.WriteRow(now, elapsedMin, phase, _songsPlayed, "(TOTAL)", t);
         }
 
         // ── UI 向け ─────────────────────────────────────────────────
@@ -268,14 +263,18 @@ namespace ModMemoryProfiler.Profiling
             if (_latest == null || _baseline == null)
                 return "No snapshot yet.";
 
-            var rows = new List<(string Mod, double DeltaMb, double NowMb, double MsPerFrame, int Bundles)>();
+            // 並び順は「増えた個数」を主キーにする。アイコン等の小さなアセットは
+            // MB がほとんど動かないまま個数だけ増えるため、MB 順だと見落とす。
+            var rows = new List<(string Mod, double DeltaMb, int DeltaCount, int Sprites, double MsPerFrame)>();
             foreach (var kv in _latest)
             {
-                double now = TotalMb(kv.Value);
-                double base_ = _baseline.TryGetValue(kv.Key, out ModStats b) ? TotalMb(b) : 0.0;
-                rows.Add((kv.Key, now - base_, now, kv.Value.MsPerFrame, kv.Value.UnfreedBundles));
+                ModStats n = kv.Value;
+                _baseline.TryGetValue(kv.Key, out ModStats b);
+                double baseMb = b != null ? TotalMb(b) : 0.0;
+                int baseCount = b != null ? LiveCount(b) : 0;
+                rows.Add((kv.Key, TotalMb(n) - baseMb, LiveCount(n) - baseCount, n.SpriteCount, n.MsPerFrame));
             }
-            rows.Sort((x, y) => y.DeltaMb.CompareTo(x.DeltaMb));
+            rows.Sort((x, y) => y.DeltaCount.CompareTo(x.DeltaCount));
 
             var sb = new System.Text.StringBuilder();
             sb.Append("<mspace=0.42em>");
@@ -287,20 +286,22 @@ namespace ModMemoryProfiler.Profiling
             if (skipped > 0)
                 sb.AppendLine($"<color=#FFC864>rate-limited {skipped} (raise the cap)</color>");
             // ヘッダと本文は必ず同じ書式で組む。空白を手打ちすると桁がずれる。
-            sb.AppendLine(Row("MOD", "+MB", "MB", "ms/f", "bnd"));
+            sb.AppendLine(Row("MOD", "+num", "+MB", "sprite", "ms/f"));
 
             int shown = 0;
             foreach (var r in rows)
             {
-                // 増分も実測値も無いMODは行を埋めるだけなので出さない
-                if (shown >= topN || (r.DeltaMb <= 0.01 && r.NowMb <= 0.01 && r.MsPerFrame <= 0.001))
+                // 何も動いていないMODは行を埋めるだけなので出さない
+                if (shown >= topN)
+                    break;
+                if (r.DeltaCount <= 0 && r.DeltaMb <= 0.01 && r.MsPerFrame <= 0.001)
                     continue;
 
-                // 増えているMODを赤くして、目で追えるようにする
-                string color = r.DeltaMb >= 1.0 ? "#FF6B6B" : "#FFFFFF";
+                // 個数が増え続けているMODを赤くして、目で追えるようにする
+                string color = r.DeltaCount >= 50 ? "#FF6B6B" : "#FFFFFF";
                 string line = Row(r.Mod,
-                    r.DeltaMb.ToString("F1"), r.NowMb.ToString("F0"),
-                    r.MsPerFrame.ToString("F2"), r.Bundles.ToString());
+                    r.DeltaCount.ToString(), r.DeltaMb.ToString("F1"),
+                    r.Sprites.ToString(), r.MsPerFrame.ToString("F2"));
                 sb.AppendLine($"<color={color}>{line}</color>");
                 shown++;
             }
@@ -322,5 +323,10 @@ namespace ModMemoryProfiler.Profiling
 
         private static double TotalMb(ModStats s)
             => (s.TextureBytes + s.RenderTextureBytes + s.MeshBytes + s.AudioBytes) / 1024.0 / 1024.0;
+
+        // 生存オブジェクトの総数。アセットだけでなく GameObject / MonoBehaviour も含めて、
+        // 「何かが解放されずに積み上がっている」を1つの数字で見られるようにする。
+        private static int LiveCount(ModStats s)
+            => s.LiveAssetCount + s.GameObjectCount + s.MonoBehaviourCount;
     }
 }
