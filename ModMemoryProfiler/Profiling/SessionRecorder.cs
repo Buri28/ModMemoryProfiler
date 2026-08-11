@@ -51,6 +51,10 @@ namespace ModMemoryProfiler.Profiling
 
         internal int SongsPlayed => _songsPlayed;
         internal bool InSong => _inSong;
+
+        // OwnershipTracker がレート制限の強さを切り替えるために参照する。
+        // フックは任意のスレッドから走るので static かつ volatile にしておく。
+        internal static volatile bool IsInSong;
         internal string? CsvPath => _sink?.FilePath;
 
         internal static void Create()
@@ -133,6 +137,7 @@ namespace ModMemoryProfiler.Profiling
             if (scene.name != GameSceneName)
                 return;
             _inSong = true;
+            IsInSong = true;
             TakeAndWrite("songStart");
         }
 
@@ -141,6 +146,7 @@ namespace ModMemoryProfiler.Profiling
             if (scene.name != GameSceneName)
                 return;
             _inSong = false;
+            IsInSong = false;
             _songsPlayed++;
             // ★リーク判定の基準点。songEnd 行同士を比較すれば「1曲あたり何MB積み上がったか」が出る。
             // 設定に関わらず必ず取る。

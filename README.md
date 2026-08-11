@@ -109,6 +109,7 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | `TrackOwnership` | `true` | 生成元MODの記録。切るとMOD別に分解できなくなる |
 | `TrackInstantiate` | `true` | `Object.Instantiate` もフックする。最も高頻度な経路なので、重い場合はここを切る |
 | `MaxOwnershipLookupsPerSecond` | `2000` | スタックトレース取得の上限。超過分は記録を見送る |
+| `OutOfSongLookupMultiplier` | `20` | 曲中でないときに上限を緩める倍率。オブジェクトの大量生成はシーン遷移時に集中するため、そこを間引くと帰属が `(Untracked)` に落ちる |
 | `EnableCpuProfiling` | `true` | MOD別フレーム時間の計測 |
 | `CpuExcludeMods` | `""` | CPU計測から外すMOD名（`;` 区切り、部分一致） |
 | `CountMonoBehaviours` | `true` | MonoBehaviour のインスタンス数を数える |

@@ -62,6 +62,12 @@ namespace ModMemoryProfiler.Profiling
             // AudioClip には public なコンストラクタが無く、生成は必ず Create を通る
             PatchIfExists(typeof(AudioClip), "Create", postfixResult);
 
+            // GameObject をコードで直接生成する経路。これが無いと GameObject の増加が
+            // まるごと (Untracked) に落ちて、誰が作ったのか分からなくなる。
+            // （Instantiate 経由の複製は下の Instantiate フックで拾える）
+            PatchAllConstructors(typeof(GameObject), postfixInstance);
+            PatchIfExists(typeof(GameObject), "CreatePrimitive", postfixResult);
+
             // Instantiate で複製されたオブジェクトも、複製した側の持ち物として数える。
             // ジェネリック版 Instantiate<T> は内部で非ジェネリック版に落ちるので、こちらだけ見れば足りる。
             if (PluginConfig.Instance.TrackInstantiate)
@@ -223,6 +229,15 @@ namespace ModMemoryProfiler.Profiling
         {
             // レート制限: 高頻度に生成するMODがいてもゲームを止めないための保険。
             // 複数スレッドから来るので、カウンタはロックで守る（走査自体はロック外で行う）。
+            //
+            // 上限は曲中のみ厳しく適用する。オブジェクトが大量に生成されるのはシーン遷移や
+            // メニューのロード時であり、そこを間引くと帰属がまるごと (Untracked) に落ちて
+            // 「誰が作ったか」が分からなくなる。曲中でなければ多少のフレーム落ちより
+            // 帰属の正確さを優先する（元々ロード中で処理が重い場面でもある）。
+            int cap = PluginConfig.Instance.MaxOwnershipLookupsPerSecond;
+            if (!SessionRecorder.IsInSong)
+                cap *= PluginConfig.Instance.OutOfSongLookupMultiplier;
+
             lock (_rateLock)
             {
                 long now = Stopwatch.GetTimestamp();
@@ -231,7 +246,7 @@ namespace ModMemoryProfiler.Profiling
                     _windowStartTicks = now;
                     _lookupsInWindow = 0;
                 }
-                if (++_lookupsInWindow > PluginConfig.Instance.MaxOwnershipLookupsPerSecond)
+                if (++_lookupsInWindow > cap)
                 {
                     _skippedLookups++;
                     return null;

@@ -55,6 +55,12 @@ namespace ModMemoryProfiler.Configuration
         // そこが 0 でないまま増え続ける場合はこの値を上げて測り直すこと。
         public virtual int MaxOwnershipLookupsPerSecond { get; set; } = 2000;
 
+        // 曲中でないときに上限を何倍まで緩めるか。
+        // オブジェクトの大量生成はシーン遷移・メニューのロード時に集中するため、
+        // そこを間引くと帰属が (Untracked) に落ちて調査にならない。
+        // 曲中でなければフレーム落ちは実害が小さいので、正確さを優先する。
+        public virtual int OutOfSongLookupMultiplier { get; set; } = 20;
+
         // ── CPU 計測 ──────────────────────────────────────────────
         // MOD製 MonoBehaviour の Update/LateUpdate/FixedUpdate を計測する。
         public virtual bool EnableCpuProfiling { get; set; } = true;
