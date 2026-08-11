@@ -14,6 +14,15 @@ namespace ModMemoryProfiler.Profiling
         internal long RenderTextureBytes;
         internal long MeshBytes;
         internal long AudioBytes;
+
+        // 型別の個数。バイト数がほとんど増えないのに個数だけ増える種類のリーク
+        // （アイコン等の小さなアセットの積み上がり）は、MB を見ていると見落とす。
+        internal int TextureCount;
+        internal int RenderTextureCount;
+        internal int SpriteCount;
+        internal int MeshCount;
+        internal int AudioCount;
+
         internal int MaterialCount;
         internal int GameObjectCount;
         internal int MonoBehaviourCount;
@@ -43,9 +52,29 @@ namespace ModMemoryProfiler.Profiling
                 ModStats s = Get(stats, OwnerOf(id, tex.GetType()));
                 long bytes = SizeOf(tex);
                 if (tex is RenderTexture)
+                {
                     s.RenderTextureBytes += bytes;
+                    s.RenderTextureCount++;
+                }
                 else
+                {
                     s.TextureBytes += bytes;
+                    s.TextureCount++;
+                }
+                s.LiveAssetCount++;
+            }
+
+            // ── スプライト ──
+            // バイト数は参照先のテクスチャに計上されるため、ここでは個数だけを見る。
+            // アイコンの積み上がりは MB ではなく個数に現れるので、この列が主役になる。
+            foreach (Sprite sprite in Resources.FindObjectsOfTypeAll<Sprite>())
+            {
+                if (sprite == null) continue;
+                int id = sprite.GetInstanceID();
+                aliveIds.Add(id);
+
+                ModStats s = Get(stats, OwnerOf(id, sprite.GetType()));
+                s.SpriteCount++;
                 s.LiveAssetCount++;
             }
 
@@ -58,6 +87,7 @@ namespace ModMemoryProfiler.Profiling
 
                 ModStats s = Get(stats, OwnerOf(id, mesh.GetType()));
                 s.MeshBytes += SizeOf(mesh);
+                s.MeshCount++;
                 s.LiveAssetCount++;
             }
 
@@ -70,6 +100,7 @@ namespace ModMemoryProfiler.Profiling
 
                 ModStats s = Get(stats, OwnerOf(id, clip.GetType()));
                 s.AudioBytes += SizeOf(clip);
+                s.AudioCount++;
                 s.LiveAssetCount++;
             }
 

@@ -68,6 +68,10 @@ namespace ModMemoryProfiler.Profiling
             PatchAllConstructors(typeof(GameObject), postfixInstance);
             PatchIfExists(typeof(GameObject), "CreatePrimitive", postfixResult);
 
+            // Sprite にも public なコンストラクタが無く、コードからの生成は Create を通る。
+            // アイコン類の積み上がりを名指しするための本命フック。
+            PatchIfExists(typeof(Sprite), "Create", postfixResult);
+
             // Instantiate で複製されたオブジェクトも、複製した側の持ち物として数える。
             // ジェネリック版 Instantiate<T> は内部で非ジェネリック版に落ちるので、こちらだけ見れば足りる。
             if (PluginConfig.Instance.TrackInstantiate)
@@ -213,7 +217,8 @@ namespace ModMemoryProfiler.Profiling
         // MemoryCensus.TakeSnapshot が列挙する型と必ず一致させること。
         // ここと向こうがずれると Prune が生きている対応を消す。
         private static bool IsCensusType(Object obj)
-            => obj is Texture || obj is Mesh || obj is AudioClip || obj is Material || obj is GameObject;
+            => obj is Texture || obj is Sprite || obj is Mesh || obj is AudioClip
+            || obj is Material || obj is GameObject;
 
         // スタックトレースを外側へ遡り、最初に見つかったMOD製アセンブリを持ち主とする。
         // レート制限に掛かった場合は null（＝記録を見送る）。

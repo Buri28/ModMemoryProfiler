@@ -1,5 +1,5 @@
+using ModMemoryProfiler.Profiling;
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
@@ -10,9 +10,11 @@ namespace ModMemoryProfiler.Output
     // 縦持ち（1行 = 1スナップショット × 1MOD）。集計・グラフ化は外部（Excel等）で行う前提。
     internal class CsvSink : IDisposable
     {
+        // 列を増減させたら README の表も必ず合わせること。
         private const string Header =
             "timestamp,elapsedMin,phase,songsPlayed,mod," +
             "textureMB,renderTextureMB,meshMB,audioMB," +
+            "textureCount,renderTextureCount,spriteCount,meshCount,audioCount," +
             "materialCount,gameObjectCount,monoBehaviourCount,liveAssetCount,unfreedBundles,msPerFrame";
 
         private readonly StreamWriter _writer;
@@ -29,11 +31,10 @@ namespace ModMemoryProfiler.Output
             _writer.Flush();
         }
 
-        internal void WriteRow(
-            DateTime timestamp, double elapsedMin, string phase, int songsPlayed, string mod,
-            long textureBytes, long renderTextureBytes, long meshBytes, long audioBytes,
-            int materialCount, int gameObjectCount, int monoBehaviourCount,
-            int liveAssetCount, int unfreedBundles, double msPerFrame)
+        // ModStats をそのまま渡す。以前は 15 個の引数を順番に並べており、
+        // 列を足すたびに渡し間違いが起きやすかった。
+        internal void WriteRow(DateTime timestamp, double elapsedMin, string phase,
+                               int songsPlayed, string mod, ModStats s)
         {
             var ci = CultureInfo.InvariantCulture;
             _writer.WriteLine(string.Join(",", new[]
@@ -43,16 +44,21 @@ namespace ModMemoryProfiler.Output
                 phase,
                 songsPlayed.ToString(ci),
                 Escape(mod),
-                Mb(textureBytes),
-                Mb(renderTextureBytes),
-                Mb(meshBytes),
-                Mb(audioBytes),
-                materialCount.ToString(ci),
-                gameObjectCount.ToString(ci),
-                monoBehaviourCount.ToString(ci),
-                liveAssetCount.ToString(ci),
-                unfreedBundles.ToString(ci),
-                msPerFrame.ToString("F3", ci),
+                Mb(s.TextureBytes),
+                Mb(s.RenderTextureBytes),
+                Mb(s.MeshBytes),
+                Mb(s.AudioBytes),
+                s.TextureCount.ToString(ci),
+                s.RenderTextureCount.ToString(ci),
+                s.SpriteCount.ToString(ci),
+                s.MeshCount.ToString(ci),
+                s.AudioCount.ToString(ci),
+                s.MaterialCount.ToString(ci),
+                s.GameObjectCount.ToString(ci),
+                s.MonoBehaviourCount.ToString(ci),
+                s.LiveAssetCount.ToString(ci),
+                s.UnfreedBundles.ToString(ci),
+                s.MsPerFrame.ToString("F3", ci),
             }));
         }
 

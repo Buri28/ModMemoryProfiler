@@ -49,6 +49,7 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | `songsPlayed` | それまでにプレイした曲数 |
 | `mod` | MOD名。`(TOTAL)` はプロセス全体、`(BaseGame)` はゲーム本体、`(Untracked)` は生成元を記録できなかったもの |
 | `textureMB` / `renderTextureMB` / `meshMB` / `audioMB` | 実バイト数（`Profiler.GetRuntimeMemorySizeLong`） |
+| `textureCount` / `renderTextureCount` / `spriteCount` / `meshCount` / `audioCount` | 型別のインスタンス数 |
 | `materialCount` / `gameObjectCount` / `monoBehaviourCount` | インスタンス数 |
 | `unfreedBundles` | 未解放 AssetBundle 数（ロード数 − アンロード数） |
 | `msPerFrame` | そのMODの `Update`/`LateUpdate`/`FixedUpdate` の合計時間 |
@@ -60,7 +61,7 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | `textureMB` | マネージドヒープ MB（`GC.GetTotalMemory`） |
 | `renderTextureMB` | Unity の確保総量 MB（ネイティブ側を含む） |
 | `materialCount` | GC 回数。Unity の GC は世代を持たないため 1 種類のみ |
-| `gameObjectCount` / `monoBehaviourCount` | 全MOD合計のインスタンス数 |
+| 個数の各列 | 全MOD合計のインスタンス数（意味の流用なし） |
 | `unfreedBundles` | レート制限で生成元の記録を見送った累計件数 |
 
 マネージドヒープが横ばいなのに Unity の確保総量だけ増える場合、ネイティブ側のリーク。
@@ -72,8 +73,12 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 ## 見方
 
 1. `phase == "songEnd"` の行だけを抽出する
-2. MOD別に `textureMB + renderTextureMB` を曲数に対してプロットする
+2. MOD別に **`liveAssetCount`（個数）** を曲数に対してプロットする
 3. **単調増加しているMODがリーク元**
+
+**MB より先に個数を見ること。** アイコンなどの小さなアセットは、1個あたり数十KBしかないため
+MB はほとんど動かないまま個数だけが積み上がる。MB だけ見ていると「頭打ちになった＝正常」と
+誤判定する。`spriteCount` が曲数に比例して増えていれば、その典型。
 
 1回だけ増えて止まるのはキャッシュなので正常。曲数に比例して増え続けるものが本物。
 `unfreedBundles` が曲数と一緒に増えるMODがあれば、それは決定的な証拠になる。
