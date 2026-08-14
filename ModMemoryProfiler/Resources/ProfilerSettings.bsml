@@ -3,9 +3,23 @@
 
     <!-- Refresh はタブの最上段に置く。VR では下へ行くほど押しづらく、
          結果を見ながら何度も押すボタンなので、スクロールせずに届く位置に固定する。 -->
+    <!-- ボタンは1行に2つまで。タブの横幅は約105で、4つ並べると左右にはみ出して見切れる。
+         増やすときは幅の合計を確認すること。 -->
     <horizontal spacing='1' pad='0' pad-top='1'>
       <button text='Refresh' pref-width='30' pref-height='6' on-click='on-refresh'
               hover-hint='Take a snapshot right now and update the list below. Also appends a row to the CSV with phase=manual.' />
+      <button text='Free Assets' pref-width='34' pref-height='6' on-click='on-unload'
+              hover-hint='Run GC and Resources.UnloadUnusedAssets right now, then show how much was reclaimed. GC alone does NOT free textures or sprites - those live in native memory and need UnloadUnusedAssets. Ignored during a song (too heavy).' />
+    </horizontal>
+
+    <horizontal spacing='1' pad='0'>
+      <button text='Purge Covers' pref-width='36' pref-height='6' on-click='on-purge'
+              hover-hint='Clear the game cover-image cache, then free the assets. Free Assets alone cannot reclaim these because the cache still references them. Covers reload when next shown. Ignored during a song.' />
+      <button text='Dump' pref-width='24' pref-height='6' on-click='on-dump'
+              hover-hint='Write the names of every live sprite and texture to UserData/ModMemoryProfiler/assets_*.tsv, sorted by count. Use this to see WHAT is piling up (song covers, UI icons, ...), not just how many.' />
+    </horizontal>
+
+    <horizontal spacing='1' pad='0'>
       <text text='[Top Mods by growth]' color='#FF8C00' font-size='4' />
     </horizontal>
 
@@ -34,6 +48,12 @@
                     apply-on-change='true'
                     bind-value='true'
                     hover-hint='Also take snapshots while playing. The scan walks tens of thousands of objects and can drop a frame, so this is OFF by default. The snapshot right after a song is always taken regardless.' />
+
+    <toggle-setting text='Unload Unused Assets On Menu'
+                    value='unloadUnusedAssetsOnMenu'
+                    apply-on-change='true'
+                    bind-value='true'
+                    hover-hint='After each song, run GC and Resources.UnloadUnusedAssets in the menu, then record a second snapshot. Shows how much was actually reclaimed. This is a heavy call (hundreds of ms) - it never runs during a song. Takes effect from the next song.' />
 
     <toggle-setting text='Track Ownership'
                     value='trackOwnership'

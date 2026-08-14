@@ -37,6 +37,17 @@ namespace ModMemoryProfiler.Configuration
         // Profiler.GetRuntimeMemorySizeLong を使う。false なら常に概算式にフォールバックする。
         public virtual bool UseUnityProfilerApi { get; set; } = true;
 
+        // ── 解放の検証 ────────────────────────────────────────────
+        // 曲終了後のメニュー復帰時に GC.Collect() → Resources.UnloadUnusedAssets() を実行する。
+        //
+        // Unity は参照が切れたアセットを自動では解放せず、この API を呼ぶかシーンが
+        // 破棄されるまでメモリに残し続ける。カバー画像などが「参照は切れているのに
+        // 残っているだけ」なのか「誰かが掴んでいる本物のリーク」なのかを切り分けられる。
+        //
+        // 実行前後のスナップショットを両方 CSV に残すので、回収量と所要時間が分かる。
+        // 数百ms〜秒単位かかる重い処理のため、曲中には絶対に実行しない。既定 OFF。
+        public virtual bool UnloadUnusedAssetsOnMenu { get; set; } = false;
+
         // ── 所有者トラッキング ────────────────────────────────────
         // アセット生成時にスタックトレースを辿って生成元MODを記録する。
         // これを切ると「MOD別」ではなく全体量しか出なくなる。

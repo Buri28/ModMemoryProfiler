@@ -55,6 +55,23 @@ namespace ModMemoryProfiler.Profiling
         // OwnershipTracker がレート制限の強さを切り替えるために参照する。
         // フックは任意のスレッドから走るので static かつ volatile にしておく。
         internal static volatile bool IsInSong;
+
+        // マネージドヒープの区間内 最小/最大。
+        //
+        // GC.GetTotalMemory の生の値は「ゴミが溜まっては GC で消える」ため大きく上下し、
+        // スナップショット時点の1点だけを見ても傾向が読めない（実際それで長く読み違えた）。
+        // 見るべきは GC 直後の値＝区間内の最小値で、これが上がり続けていれば
+        // 「回収できないオブジェクトが積み上がっている」＝本物のリークと判断できる。
+        private long _managedMin = long.MaxValue;
+        private long _managedMax;
+        private long _managedFloorBaseline;
+        private long _managedFloorLatest;
+
+        // Resources.UnloadUnusedAssets の実行予約と、直近の結果（UI 表示用）
+        private bool _unloadRequested;
+        private bool _unloadRunning;
+        private double _lastUnloadMs;
+        private string? _lastUnloadSummary;
         internal string? CsvPath => _sink?.FilePath;
 
         internal static void Create()
@@ -115,6 +132,19 @@ namespace ModMemoryProfiler.Profiling
         {
             _framesSinceLastSample++;
 
+            // 毎フレーム見る。カウンタを読むだけなので割り当ても走査も発生しない。
+            long managed = GC.GetTotalMemory(false);
+            if (managed < _managedMin) _managedMin = managed;
+            if (managed > _managedMax) _managedMax = managed;
+
+            // 解放はシーンのアンロード処理中ではなく、メニューに戻りきった次のフレーム以降に行う。
+            // アンロード中に重い処理を挟むと遷移そのものを乱すため。
+            if (_unloadRequested && !_inSong && !_unloadRunning)
+            {
+                _unloadRequested = false;
+                StartCoroutine(UnloadUnusedAssetsAndMeasure());
+            }
+
             if (Time.realtimeSinceStartup < _nextSampleTime)
                 return;
 
@@ -148,6 +178,7 @@ namespace ModMemoryProfiler.Profiling
             _inSong = false;
             IsInSong = false;
             _songsPlayed++;
+            _unloadRequested = PluginConfig.Instance.UnloadUnusedAssetsOnMenu;
             // ★リーク判定の基準点。songEnd 行同士を比較すれば「1曲あたり何MB積み上がったか」が出る。
             // 設定に関わらず必ず取る。
             TakeAndWrite("songEnd");
@@ -234,8 +265,22 @@ namespace ModMemoryProfiler.Profiling
             }
 
             // 以下は意味を流用している列。README の「(TOTAL) 行」の表と必ず一致させること。
-            t.TextureBytes = managedHeap;          // = managedHeapMB
+            t.TextureBytes = managedHeap;          // = managedHeapMB（この瞬間の値）
             t.RenderTextureBytes = unityAllocated; // = unityAllocatedMB（ネイティブ含む）
+
+            // ★リーク判定の主指標。meshMB / audioMB 列は TOTAL 行では未使用なので流用する。
+            // managedHeapMin が単調増加していれば、GC で回収できないオブジェクトが
+            // 積み上がっている＝マネージドリーク。
+            long floor = (_managedMin == long.MaxValue) ? managedHeap : _managedMin;
+            t.MeshBytes = floor;
+            t.AudioBytes = (_managedMax == 0) ? managedHeap : _managedMax;
+            _managedMin = long.MaxValue;
+            _managedMax = 0;
+
+            // UI 用。起動直後の床を基準に、そこからどれだけ上がったかを見せる。
+            if (_managedFloorBaseline == 0)
+                _managedFloorBaseline = floor;
+            _managedFloorLatest = floor;
             // Unity の GC は Boehm で世代を持たないため CollectionCount(0/1/2) は全て同値。
             // 3列に分けても情報が増えないので 1 列だけ使う。
             t.MaterialCount = GC.CollectionCount(0);
@@ -243,8 +288,132 @@ namespace ModMemoryProfiler.Profiling
             // レート制限で帰属を諦めた累計件数。0 でない場合、MOD別の数値は
             // その分だけ (Untracked) に逃げている。
             t.UnfreedBundles = (int)Math.Min(int.MaxValue, OwnershipTracker.SkippedLookups);
+            // afterUnload 行に限り、UnloadUnusedAssets の所要時間(ms)を入れる。
+            // 実用に耐える速さかどうかの判断材料になる。
+            if (phase == "afterUnload")
+                t.MsPerFrame = _lastUnloadMs;
 
             _sink!.WriteRow(now, elapsedMin, phase, _songsPlayed, "(TOTAL)", t);
+        }
+
+        // ── 解放の検証 ───────────────────────────────────────────────
+
+        // 参照が切れているだけのアセットを実際に解放し、何がどれだけ回収できたかを測る。
+        //
+        // 直前の songEnd スナップショットが「解放前」、この後に取る afterUnload が「解放後」。
+        // 差分が大きければ「参照は切れていたが Unity が解放していなかっただけ」、
+        // ほとんど減らなければ「誰かが掴んでいる本物のリーク」と切り分けられる。
+        private System.Collections.IEnumerator UnloadUnusedAssetsAndMeasure(bool purgeCoverCache = false)
+        {
+            _unloadRunning = true;
+
+            Dictionary<string, ModStats>? before = _latest;
+
+            // 先にカバー画像キャッシュの参照を切る。これをやらないと、
+            // キャッシュが握っている分は「使用中」とみなされて解放されない。
+            int purged = purgeCoverCache ? CoverCachePurger.ClearAll() : 0;
+
+            // 先にマネージド側を回収しておく。C# 側から参照が残っていると
+            // UnloadUnusedAssets はそのアセットを「使用中」とみなして解放しない。
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            AsyncOperation op = Resources.UnloadUnusedAssets();
+            while (!op.isDone)
+                yield return null;
+            sw.Stop();
+
+            _lastUnloadMs = sw.Elapsed.TotalMilliseconds;
+            TakeAndWrite(purgeCoverCache ? "afterPurge" : "afterUnload");
+
+            if (before != null && _latest != null)
+            {
+                int dObj = TotalLiveObjects(_latest) - TotalLiveObjects(before);
+                double dMb = TotalAssetMb(_latest) - TotalAssetMb(before);
+                string what = purgeCoverCache ? $"purge({purged})" : "unload";
+                _lastUnloadSummary = $"{what} {dObj} objs {dMb:F0}MB in {_lastUnloadMs:F0}ms";
+                Plugin.Log.Info($"{what}: {dObj} objects, {dMb:F1} MB, {_lastUnloadMs:F0} ms");
+            }
+
+            _unloadRunning = false;
+        }
+
+        private static int TotalLiveObjects(Dictionary<string, ModStats> stats)
+        {
+            int n = 0;
+            foreach (ModStats s in stats.Values)
+                n += LiveCount(s);
+            return n;
+        }
+
+        private static double TotalAssetMb(Dictionary<string, ModStats> stats)
+        {
+            double mb = 0;
+            foreach (var kv in stats)
+            {
+                if (kv.Key == "(TOTAL)") continue; // 混ざっていないはずだが念のため
+                mb += TotalMb(kv.Value);
+            }
+            return mb;
+        }
+
+        // 生きているアセットの名前一覧を書き出す。何が積み上がっているのかの正体を見るため。
+        internal void DumpAssets()
+        {
+            try
+            {
+                string dir = System.IO.Path.GetDirectoryName(_sink?.FilePath ?? "") ?? "";
+                // MonoBehaviour の型は種類が多いので、上限を広めに取る
+                string path = MemoryCensus.DumpAssetNames(dir, 1500);
+                _lastUnloadSummary = "dumped " + System.IO.Path.GetFileName(path);
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.Error($"asset dump failed: {e}");
+                _lastUnloadSummary = "dump failed (see log)";
+            }
+        }
+
+        // UI のボタンから即実行する。曲中は重すぎるので受け付けない。
+        // 直前の値が古いと回収量の差分が正しく出ないため、必ず取り直してから解放する。
+        internal void UnloadNow()
+        {
+            if (_inSong)
+            {
+                Plugin.Log.Info("UnloadUnusedAssets skipped: in song.");
+                _lastUnloadSummary = "unload skipped (in song)";
+                return;
+            }
+            if (_unloadRunning)
+                return;
+
+            TakeAndWrite("beforeUnload");
+            StartCoroutine(UnloadUnusedAssetsAndMeasure());
+        }
+
+        // カバー画像キャッシュを空にしてから解放する。
+        // 曲リストのカバーは次に表示されたときに再読み込みされる。
+        internal void PurgeCoverCacheNow()
+        {
+            if (_inSong)
+            {
+                Plugin.Log.Info("Purge skipped: in song.");
+                _lastUnloadSummary = "purge skipped (in song)";
+                return;
+            }
+            if (_unloadRunning)
+                return;
+            if (!CoverCachePurger.Available)
+            {
+                Plugin.Log.Warn("Purge unavailable: SpriteAsyncLoader not found.");
+                _lastUnloadSummary = "purge unavailable (see log)";
+                return;
+            }
+
+            TakeAndWrite("beforePurge");
+            StartCoroutine(UnloadUnusedAssetsAndMeasure(purgeCoverCache: true));
         }
 
         // ── UI 向け ─────────────────────────────────────────────────
@@ -281,10 +450,24 @@ namespace ModMemoryProfiler.Profiling
             sb.AppendLine($"{_latestAt:HH:mm:ss} songs={_songsPlayed} vs {_baselinePhase}"
                         + (_baselineRank < 2 ? "  <color=#FFC864>(play 1 song)</color>" : ""));
 
+            // ★リークの主指標。GC 直後の使用量（床）が起動時からどれだけ上がったか。
+            // ここが増え続けていれば、回収できないオブジェクトが積み上がっている。
+            if (_managedFloorBaseline > 0)
+            {
+                double floorMb = _managedFloorLatest / 1024.0 / 1024.0;
+                double riseMb = (_managedFloorLatest - _managedFloorBaseline) / 1024.0 / 1024.0;
+                string color = riseMb >= 500 ? "#FF6B6B" : "#FFFFFF";
+                sb.AppendLine($"<color={color}>GC floor {floorMb:F0}MB (+{riseMb:F0} since start)</color>");
+            }
+
             // 帰属を諦めた分があるなら黙って隠さない。数値が過小である可能性を明示する。
             long skipped = OwnershipTracker.SkippedLookups;
             if (skipped > 0)
                 sb.AppendLine($"<color=#FFC864>rate-limited {skipped} (raise the cap)</color>");
+
+            // 直近の解放結果。回収できているかがその場で分かる。
+            if (_lastUnloadSummary != null)
+                sb.AppendLine($"<color=#8FD98F>{_lastUnloadSummary}</color>");
             // ヘッダと本文は必ず同じ書式で組む。空白を手打ちすると桁がずれる。
             sb.AppendLine(Row("MOD", "+num", "+MB", "sprite", "ms/f"));
 
