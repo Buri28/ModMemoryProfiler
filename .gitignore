@@ -24,3 +24,6 @@ obj/
 
 ## Local machine paths (never commit)
 BeatSaberPath.props
+
+## Shortcuts contain absolute local paths
+*.lnk

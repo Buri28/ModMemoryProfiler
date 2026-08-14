@@ -57,6 +57,9 @@ namespace ModMemoryProfiler
             // 3. MOD製 MonoBehaviour のフレーム時間計測を仕掛ける
             CpuProfiler.Install(HarmonyInstance);
 
+            // 3b. カバー画像キャッシュを空にできるよう、ローダーを捕獲しておく
+            CoverCachePurger.Install(HarmonyInstance);
+
             // 4. 常駐して定期スナップショットを取る
             SessionRecorder.Create();
 

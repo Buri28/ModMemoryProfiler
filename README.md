@@ -58,14 +58,32 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 
 | 列 | `(TOTAL)` 行での意味 |
 |---|---|
-| `textureMB` | マネージドヒープ MB（`GC.GetTotalMemory`） |
+| `textureMB` | マネージドヒープ MB（スナップショット時点の値） |
 | `renderTextureMB` | Unity の確保総量 MB（ネイティブ側を含む） |
+| `meshMB` | **マネージドヒープの区間内最小値（GC直後の「床」）** |
+| `audioMB` | マネージドヒープの区間内最大値 |
 | `materialCount` | GC 回数。Unity の GC は世代を持たないため 1 種類のみ |
 | 個数の各列 | 全MOD合計のインスタンス数（意味の流用なし） |
 | `unfreedBundles` | レート制限で生成元の記録を見送った累計件数 |
 
 マネージドヒープが横ばいなのに Unity の確保総量だけ増える場合、ネイティブ側のリーク。
 `gameObjectCount` / `monoBehaviourCount` が曲数に比例して増える場合はマネージド側の解放漏れ。
+
+### マネージドリークの見つけ方
+
+**`textureMB`（その瞬間の値）ではなく `meshMB`（区間内の最小値）を見ること。**
+
+マネージドヒープの瞬間値は「ゴミが溜まっては GC で消える」ため大きく上下し、
+1点だけを見ても傾向が読めない。見るべきは GC 直後の値、つまり区間内の最小値。
+
+| `meshMB`（床）の推移 | 意味 |
+|---|---|
+| ほぼ一定 | 正常。上下しているのは一時的なゴミ |
+| **単調増加** | **回収できないオブジェクトが積み上がっている＝マネージドリーク** |
+
+マネージドヒープの MB を MOD 別に分けることは原理的にできない。
+リークが見つかったら `Dump` を使い、`MonoBehaviour` の型別インスタンス数から
+どのクラスが生き残っているかを特定する（型からアセンブリを引くので帰属は正確）。
 
 `(TOTAL)` 行の `unfreedBundles` が 0 でない場合、MOD別の数値はその分だけ `(Untracked)` に
 逃げている。`MaxOwnershipLookupsPerSecond` を上げて測り直すこと。
@@ -111,6 +129,7 @@ MB はほとんど動かないまま個数だけが積み上がる。MB だけ�
 | `ShowInGameTab` | `true` | ゲーム内タブを表示する |
 | `SampleIntervalSeconds` | `30` | スナップショット間隔 |
 | `SampleDuringSong` | `false` | 曲中も走査する（フレーム落ちの可能性あり） |
+| `UnloadUnusedAssetsOnMenu` | `false` | 曲終了後のメニューで `GC.Collect()` → `Resources.UnloadUnusedAssets()` を実行し、解放前後のスナップショットを両方記録する。詳細は下記 |
 | `TrackOwnership` | `true` | 生成元MODの記録。切るとMOD別に分解できなくなる |
 | `TrackInstantiate` | `true` | `Object.Instantiate` もフックする。最も高頻度な経路なので、重い場合はここを切る |
 | `MaxOwnershipLookupsPerSecond` | `2000` | スタックトレース取得の上限。超過分は記録を見送る |
@@ -122,3 +141,20 @@ MB はほとんど動かないまま個数だけが積み上がる。MB だけ�
 
 `TrackOwnership` / `TrackInstantiate` / `EnableCpuProfiling` は起動時に Harmony パッチを
 一括で当てるため、変更は次回起動から反映される。
+
+## 「本物のリーク」と「解放されていないだけ」の切り分け
+
+Unity は参照が切れたアセットを自動では解放せず、`Resources.UnloadUnusedAssets()` が
+呼ばれるかシーンが破棄されるまでメモリに残し続ける。したがって
+「オブジェクトが積み上がっている」だけでは、どちらなのか判断できない。
+
+`UnloadUnusedAssetsOnMenu` を有効にすると、曲終了後のメニューで実際に解放を試み、
+その前後を `songEnd` 行と `afterUnload` 行として CSV に記録する。
+
+| 差分 | 意味 |
+|---|---|
+| 大きく減る | 参照は切れていた。定期的な解放で解決できる |
+| ほとんど減らない | どこかが参照を掴んでいる。**本物のリーク** |
+
+`afterUnload` 行の `(TOTAL)` の `msPerFrame` 列には、解放処理の所要時間（ミリ秒）が入る。
+実用に耐える速さかの判断に使う。数百ms〜秒単位かかる重い処理のため、曲中には実行しない。

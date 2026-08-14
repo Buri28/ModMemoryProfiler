@@ -96,6 +96,34 @@ namespace ModMemoryProfiler.UI
             NotifyPropertyChanged(nameof(ReportText));
         }
 
+        // GC + Resources.UnloadUnusedAssets を今すぐ実行する。
+        // GC 単体では Unity のアセット（テクスチャ・スプライト等）は解放されないため、
+        // 「GCボタン」ではなくこの2段構えである必要がある。
+        [UIAction("on-unload")]
+        private void OnUnload()
+        {
+            SessionRecorder.Instance?.UnloadNow();
+            NotifyPropertyChanged(nameof(ReportText));
+        }
+
+        // カバー画像キャッシュを空にしてから解放する。
+        // Free Assets だけでは、キャッシュが参照を握っている分は解放されない。
+        [UIAction("on-purge")]
+        private void OnPurge()
+        {
+            SessionRecorder.Instance?.PurgeCoverCacheNow();
+            NotifyPropertyChanged(nameof(ReportText));
+        }
+
+        // 積み上がっているアセットの名前一覧を UserData に書き出す。
+        // 「カバー画像なのか UI アイコンなのか」を名前で判別するための診断。
+        [UIAction("on-dump")]
+        private void OnDump()
+        {
+            SessionRecorder.Instance?.DumpAssets();
+            NotifyPropertyChanged(nameof(ReportText));
+        }
+
         [UIAction("FormatInt")]
         private string FormatInt(float value) => ((int)value).ToString();
 
@@ -109,6 +137,14 @@ namespace ModMemoryProfiler.UI
         {
             get => PluginConfig.Instance.SampleDuringSong;
             set { PluginConfig.Instance.SampleDuringSong = value; NotifyPropertyChanged(); }
+        }
+
+        // 次の曲終了時から効く（フラグを見るのが曲終了のタイミングのため）。
+        [UIValue("unloadUnusedAssetsOnMenu")]
+        public bool UnloadUnusedAssetsOnMenu
+        {
+            get => PluginConfig.Instance.UnloadUnusedAssetsOnMenu;
+            set { PluginConfig.Instance.UnloadUnusedAssetsOnMenu = value; NotifyPropertyChanged(); }
         }
 
         [UIValue("trackOwnership")]
