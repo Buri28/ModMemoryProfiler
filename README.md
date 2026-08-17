@@ -45,7 +45,7 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | 列 | 内容 |
 |---|---|
 | `timestamp` / `elapsedMin` | 記録時刻 / 起動からの経過分 |
-| `phase` | `baseline` / `menu` / `song` / `songStart` / `songEnd` / `manual` |
+| `phase` | `baseline` / `startup` / `menu` / `song` / `songStart` / `songEnd` / `manual` / `view:<画面名>` |
 | `songsPlayed` | それまでにプレイした曲数 |
 | `mod` | MOD名。`(TOTAL)` はプロセス全体、`(BaseGame)` はゲーム本体、`(Untracked)` は生成元を記録できなかったもの |
 | `textureMB` / `renderTextureMB` / `meshMB` / `audioMB` | 実バイト数（`Profiler.GetRuntimeMemorySizeLong`） |
@@ -53,6 +53,11 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | `materialCount` / `gameObjectCount` / `monoBehaviourCount` | インスタンス数 |
 | `unfreedBundles` | 未解放 AssetBundle 数（ロード数 − アンロード数） |
 | `msPerFrame` | そのMODの `Update`/`LateUpdate`/`FixedUpdate` の合計時間 |
+| `processPrivateMB` / `processWorkingSetMB` | プロセス全体の使用量。`(TOTAL)` 行にのみ入り、MOD別の行では常に 0 |
+| `unityReservedMB` | Unity が OS から予約している総量。`renderTextureMB`（確保総量）との差がアロケータの未使用分 |
+| `monoHeapMB` | Mono が OS から借りているヒープ総量。`textureMB`（使用量）との差が Boehm の断片化。詳細は下記 |
+| `sysFreeMB` / `sysCommitPct` | **システム全体**の空き物理メモリとコミット使用率。重くなる直接の引き金はここが尽きること |
+| `customLevelCount` | SongCore が読み込み済みのカスタム曲数。`-1` は取得不可。読み込みは非同期なので 0 から増えていく |
 
 `(TOTAL)` 行だけは列を流用しているので注意:
 
@@ -65,6 +70,11 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 | `materialCount` | GC 回数。Unity の GC は世代を持たないため 1 種類のみ |
 | 個数の各列 | 全MOD合計のインスタンス数（意味の流用なし） |
 | `unfreedBundles` | レート制限で生成元の記録を見送った累計件数 |
+
+**`processPrivateMB` がプロセス全体を表す唯一の列。** マネージドヒープと Unity の確保総量を
+足してもプロセス全体には遠く及ばない（実測で 2.9GB に対しプロセスは 8.9GB）。
+差はネイティブ・Mono ランタイム・各MODのDLL・ドライバのバッファ等で、他のどの列にも現れない。
+**起動条件を変えて比較するときは、まずこの列を見ること。**
 
 マネージドヒープが横ばいなのに Unity の確保総量だけ増える場合、ネイティブ側のリーク。
 `gameObjectCount` / `monoBehaviourCount` が曲数に比例して増える場合はマネージド側の解放漏れ。
@@ -84,6 +94,39 @@ Mono の GC ヒープは全MOD共有なので、後からメモリを見ても�
 マネージドヒープの MB を MOD 別に分けることは原理的にできない。
 リークが見つかったら `Dump` を使い、`MonoBehaviour` の型別インスタンス数から
 どのクラスが生き残っているかを特定する（型からアセンブリを引くので帰属は正確）。
+
+### ヒープの断片化（使用量とヒープサイズは別物）
+
+Unity の Mono は Boehm（非圧縮GC）で、回収後にオブジェクトを詰め直さない。
+ヒープはブロック単位で管理され、**1ブロック内に生存オブジェクトが1つでも残っていると
+そのブロック全体を OS に返せない**。結果として、使用量が横ばいでもヒープだけ広がりうる。
+
+| 列 | 意味 |
+|---|---|
+| `textureMB` / `meshMB` | **使用量**（生きているオブジェクトの合計）。`GC.GetTotalMemory` |
+| `monoHeapMB` | **ヒープ総量**（隙間を含む、OSから借りている量）。`GetMonoHeapSizeLong` |
+
+`monoHeapMB ÷ 使用量` が断片化の目安。2倍を超えていれば隙間の方が多い。
+
+**使用量が横ばいなのに `monoHeapMB` と `processPrivateMB` だけ増える場合、断片化。**
+GC を呼んでも解消しない（詰め直しができないため）。割り当てのパターン自体を
+減らす以外に手が無いので、`AutoDumpEverySongs` の型別一覧で発生源を特定すること。
+
+### 段差を起こした画面の特定
+
+積み上がりは一定ペースの漏れとは限らず、**ある画面を開いた瞬間の段差**として起きることがある。
+一覧系の画面は項目数ぶんの UI 部品とカバー画像をまとめて生成するため、
+それが破棄されないと1回の表示で数千オブジェクトが resident になる。
+
+定期スナップショット（既定30秒）では段差の前後がどの画面だったのか分からないので、
+画面が切り替わって落ち着いたタイミングで `phase=view:<画面名>` の行を自動で1本残す。
+
+1. `phase` が `view:` で始まる行を抽出する
+2. `gameObjectCount` / `monoBehaviourCount` / `textureCount` を1行ずつ前の行と比べる
+3. **1回の遷移で数千増えている画面が段差の発生源**
+
+閉じた後も減らなければ、その画面は開くたびにメモリを置き去りにしている。
+画面名は連結される場合がある（1回の遷移で複数の ViewController が有効化されるため）。
 
 `(TOTAL)` 行の `unfreedBundles` が 0 でない場合、MOD別の数値はその分だけ `(Untracked)` に
 逃げている。`MaxOwnershipLookupsPerSecond` を上げて測り直すこと。
@@ -109,7 +152,30 @@ MB はほとんど動かないまま個数だけが積み上がる。MB だけ�
 ## ゲーム内UI
 
 曲選択画面の **GameplaySetup パネルの `MemProfiler` タブ**に、
-起動時からの増分でソートしたMOD別ランキングと主要な設定を表示する。
+メモリ残量ゲージ、起動時からの増分でソートしたMOD別ランキング、主要な設定を表示する。
+
+### メモリ残量ゲージ
+
+```text
+MEM    [#####...............] 43.5/59.6GB free
+COMMIT [#####...............] 27% used
+rate   +1180MB/h  ~36.0h left
+```
+
+長時間プレイで重くなる直接の引き金は、Beat Saber 単体の使用量ではなく
+**マシン全体の空きが尽きてページングが始まること**。実測では空きが約 1.3GB まで
+落ちた時点で明確に悪化し、その間 Windows がページファイルを3回自動拡張していた。
+
+`rate` はこのセッションで実測した増加率と、そこから割り出した残り時間。
+空きの絶対値だけでは判断できない（増え方が速ければ余裕があってもすぐ尽きる）ため併記する。
+起動直後の読み込みぶんを含めないよう、増加率の起点は開始5分後に置いている。
+残り時間は空きが 0 ではなく **2GB** を下回るまでの見込みで出す（実測で悪化が始まる水準）。
+
+| 色 | 意味 |
+|---|---|
+| 緑 | 使用率 80% 未満 |
+| 黄 | 80% 以上、または残り1.5時間未満 |
+| 赤 | 92% 以上、または残り30分未満 |
 
 表示は定期スナップショットの使い回しなので、タブを開くだけでは計測負荷は増えない。
 `Refresh` を押したときだけ走査が走る（その行は `phase=manual` として CSV にも残る）。
@@ -129,6 +195,10 @@ MB はほとんど動かないまま個数だけが積み上がる。MB だけ�
 | `ShowInGameTab` | `true` | ゲーム内タブを表示する |
 | `SampleIntervalSeconds` | `30` | スナップショット間隔 |
 | `SampleDuringSong` | `false` | 曲中も走査する（フレーム落ちの可能性あり） |
+| `TrackScreenTransitions` | `true` | 画面が切り替わるたびに `view:<画面名>` の行を残す。段差の発生源を特定するのに使う。メニューでのみ走る |
+| `AutoDumpEverySongs` | `10` | 何曲ごとに型別一覧（`assets_*.tsv`）を自動で書き出すか。0 で無効。後から任意の2点を引き算できる |
+| `StartupDenseSampleSeconds` | `180` | 起動直後の何秒間をメモリのみ短間隔で記録するか（`phase=startup`）。0 で無効。曲の読み込みは数十秒で終わるため、通常間隔では前後2点しか残らない |
+| `StartupSampleIntervalSeconds` | `3` | 上記区間での記録間隔。走査を伴わないのでカウンタを読むだけ |
 | `UnloadUnusedAssetsOnMenu` | `false` | 曲終了後のメニューで `GC.Collect()` → `Resources.UnloadUnusedAssets()` を実行し、解放前後のスナップショットを両方記録する。詳細は下記 |
 | `TrackOwnership` | `true` | 生成元MODの記録。切るとMOD別に分解できなくなる |
 | `TrackInstantiate` | `true` | `Object.Instantiate` もフックする。最も高頻度な経路なので、重い場合はここを切る |
@@ -158,3 +228,17 @@ Unity は参照が切れたアセットを自動では解放せず、`Resources.
 
 `afterUnload` 行の `(TOTAL)` の `msPerFrame` 列には、解放処理の所要時間（ミリ秒）が入る。
 実用に耐える速さかの判断に使う。数百ms〜秒単位かかる重い処理のため、曲中には実行しない。
+
+### 手動の解放ボタンは削除済み
+
+かつて `Free Assets` ボタン（`GC.Collect()` → `Resources.UnloadUnusedAssets()` を即実行）が
+あったが、削除した。実測で **712ms かけて 0 個 / 0MB** しか回収できなかったため。
+
+| 項目 | 解放前 | 解放後 |
+| --- | --- | --- |
+| GameObject | 39,041 | 39,041 |
+| MonoBehaviour | 74,245 | 74,245 |
+| Unity 確保総量 | 2,188MB | 2,188MB |
+
+積み上がっているものは全て誰かが参照を掴んでおり、この API では原理的に回収できない。
+「重くなったら押して戻す」用途には使えないことが確定しているので、UI から外した。

@@ -29,6 +29,31 @@ namespace ModMemoryProfiler.Configuration
         // 曲終了直後のスナップショットは、この設定に関わらず必ず取得する（リーク判定の基準になるため）。
         public virtual bool SampleDuringSong { get; set; } = false;
 
+        // 画面（ViewController）の切り替わりごとにスナップショットを取る。
+        //
+        // 増加は一定ペースの漏れではなく、ある画面を開いた瞬間の段差として起きる。
+        // 30秒間隔のスナップショットでは段差の犯人が分からないため、
+        // 遷移が落ち着いた時点で phase="view:<画面名>" の行を1本足す。
+        // メニューでしか走らないので曲中のフレーム落ちには影響しない。
+        public virtual bool TrackScreenTransitions { get; set; } = true;
+
+        // 何曲ごとに、生存オブジェクトの型別一覧（assets_*.tsv）を自動で書き出すか。0 で無効。
+        //
+        // 曲を跨いで積み上がる分の正体は型別に見ないと分からないが、
+        // 手動の Dump では「重くなった後」の1枚しか残らず、増え方の推移が追えなかった。
+        // 一定間隔で残しておけば、後から任意の2点を引き算できる。
+        public virtual int AutoDumpEverySongs { get; set; } = 10;
+
+        // 起動直後の何秒間を「濃く」記録するか。0 で無効。
+        //
+        // 曲の読み込みは起動直後の数十秒で終わってしまうため、既定の30秒間隔では
+        // 「読み込み前」と「読み込み後」の2点しか残らず、何にいくら掛かったのかが読めない。
+        // この区間だけは短い間隔でメモリだけを記録する（オブジェクト走査はしないので軽い）。
+        public virtual int StartupDenseSampleSeconds { get; set; } = 180;
+
+        // 上記の区間での記録間隔（秒）。走査を伴わないのでカウンタを読むだけ。
+        public virtual int StartupSampleIntervalSeconds { get; set; } = 3;
+
         // ── メモリ計測 ────────────────────────────────────────────
         // MonoBehaviour のインスタンス数を MOD 別に数える。
         // 型からアセンブリが直接引けるので帰属が正確。MOD製オブジェクトの解放漏れが直接見える。

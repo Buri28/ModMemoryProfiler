@@ -15,7 +15,9 @@ namespace ModMemoryProfiler.Output
             "timestamp,elapsedMin,phase,songsPlayed,mod," +
             "textureMB,renderTextureMB,meshMB,audioMB," +
             "textureCount,renderTextureCount,spriteCount,meshCount,audioCount," +
-            "materialCount,gameObjectCount,monoBehaviourCount,liveAssetCount,unfreedBundles,msPerFrame";
+            "materialCount,gameObjectCount,monoBehaviourCount,liveAssetCount,unfreedBundles,msPerFrame," +
+            "processPrivateMB,processWorkingSetMB,unityReservedMB,monoHeapMB," +
+            "sysFreeMB,sysCommitPct,customLevelCount";
 
         private readonly StreamWriter _writer;
 
@@ -41,7 +43,7 @@ namespace ModMemoryProfiler.Output
             {
                 timestamp.ToString("yyyy-MM-dd HH:mm:ss", ci),
                 elapsedMin.ToString("F2", ci),
-                phase,
+                Escape(phase),
                 songsPlayed.ToString(ci),
                 Escape(mod),
                 Mb(s.TextureBytes),
@@ -59,6 +61,14 @@ namespace ModMemoryProfiler.Output
                 s.LiveAssetCount.ToString(ci),
                 s.UnfreedBundles.ToString(ci),
                 s.MsPerFrame.ToString("F3", ci),
+                // (TOTAL) 行以外は 0。プロセス全体の値なのでMOD別に分ける意味がない。
+                Mb(s.ProcessPrivateBytes),
+                Mb(s.ProcessWorkingSetBytes),
+                Mb(s.UnityReservedBytes),
+                Mb(s.MonoHeapBytes),
+                Mb(s.SystemFreeBytes),
+                s.SystemCommitPercent.ToString("F1", ci),
+                s.CustomLevelCount.ToString(ci),
             }));
         }
 
