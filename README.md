@@ -10,8 +10,7 @@ Beat Saber で「長時間プレイするとカクつく」原因MODを特定す
 
 [イメージ]
 
-<img width="44%" height="44%" alt="image" src="https://github.com/user-attachments/assets/4ae8809c-f9ec-45af-8b48-a65197715728" />
-
+<img width="50%" height="50%" alt="image" src="https://github.com/user-attachments/assets/5b2b68fa-cd27-456e-b01c-f2b1a8ccd49b" />
 
 ## これは何をするMODか
 
