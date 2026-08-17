@@ -60,6 +60,10 @@ namespace ModMemoryProfiler
             // 3b. カバー画像キャッシュを空にできるよう、ローダーを捕獲しておく
             CoverCachePurger.Install(HarmonyInstance);
 
+            // 3c. 画面の切り替わりを拾って「どの画面が何個残すか」を記録する
+            if (Config.TrackScreenTransitions)
+                ScreenWatcher.Install(HarmonyInstance);
+
             // 4. 常駐して定期スナップショットを取る
             SessionRecorder.Create();
 

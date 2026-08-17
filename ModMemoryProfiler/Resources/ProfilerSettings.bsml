@@ -1,94 +1,95 @@
 <bg>
   <settings-container child-control-width='true' child-expand-width='true' spacing='0' pad='0'>
 
-    <!-- Refresh はタブの最上段に置く。VR では下へ行くほど押しづらく、
-         結果を見ながら何度も押すボタンなので、スクロールせずに届く位置に固定する。 -->
-    <!-- ボタンは1行に2つまで。タブの横幅は約105で、4つ並べると左右にはみ出して見切れる。
-         増やすときは幅の合計を確認すること。 -->
+    <!-- ボタンは1行。タブの横幅は約105なので、幅の合計がそれを超えると左右が見切れる。
+         現在 24+20+20+26 = 90 + spacing 3 = 93。ラベルを長くするときは必ず幅も見直すこと。 -->
     <horizontal spacing='1' pad='0' pad-top='1'>
-      <button text='Refresh' pref-width='30' pref-height='6' on-click='on-refresh'
-              hover-hint='Take a snapshot right now and update the list below. Also appends a row to the CSV with phase=manual.' />
-      <button text='Free Assets' pref-width='34' pref-height='6' on-click='on-unload'
-              hover-hint='Run GC and Resources.UnloadUnusedAssets right now, then show how much was reclaimed. GC alone does NOT free textures or sprites - those live in native memory and need UnloadUnusedAssets. Ignored during a song (too heavy).' />
+      <button text='Refresh' pref-width='24' pref-height='6' on-click='on-refresh'
+              hover-hint='Take a snapshot right now and update both columns. Also appends a row to the CSV with phase=manual.' />
+      <button text='Dump' pref-width='20' pref-height='6' on-click='on-dump'
+              hover-hint='Write every live sprite, texture, audio clip and MonoBehaviour type to UserData/ModMemoryProfiler/assets_*.tsv, sorted by count. Use this to see WHAT is piling up.' />
+      <button text='Purge' pref-width='20' pref-height='6' on-click='on-purge'
+              hover-hint='Clear the game cover-image cache, then run GC and Resources.UnloadUnusedAssets. Covers reload when next shown. Ignored during a song.' />
+      <button text='Settings' pref-width='26' pref-height='6' click-event='show-settings'
+              hover-hint='Open the profiler settings.' />
     </horizontal>
 
-    <horizontal spacing='1' pad='0'>
-      <button text='Purge Covers' pref-width='36' pref-height='6' on-click='on-purge'
-              hover-hint='Clear the game cover-image cache, then free the assets. Free Assets alone cannot reclaim these because the cache still references them. Covers reload when next shown. Ignored during a song.' />
-      <button text='Dump' pref-width='24' pref-height='6' on-click='on-dump'
-              hover-hint='Write the names of every live sprite and texture to UserData/ModMemoryProfiler/assets_*.tsv, sorted by count. Use this to see WHAT is piling up (song covers, UI icons, ...), not just how many.' />
-    </horizontal>
-
-    <horizontal spacing='1' pad='0'>
-      <text text='[Top Mods by growth]' color='#FF8C00' font-size='4' />
-    </horizontal>
-
-    <!-- ベースライン局面からの増分MBで降順。赤 = 1MB以上増えているMOD。
+    <!-- 左＝プロセスとシステムの統計、右＝MOD別の増分。
          注意: ここに pref-height を書いてはいけない。settings-container は子の高さを
          コンテンツから自動計算しており、pref-height を明示するとその計算が効かなくなって
-         高さが潰れ、後続の要素（Refresh・[Settings]）と重なる。
-         行数は TopModCount で調整すること（タブ自体はスクロールする）。 -->
-    <horizontal spacing='0' pad='0'>
+         高さが潰れ、後続の要素と重なる。pref-width は問題ない。
+         幅は font-size 3・mspace 0.42em で 1文字あたり約1.26。
+         左48 ≒ 38文字、右56 ≒ 44文字が収まる上限。行の長さを変えるときはここを確認すること。 -->
+    <horizontal spacing='1' pad='0' pad-top='1'>
+      <text id='stats-text' text='~statsText'
+            font-size='3' align='TopLeft' word-wrapping='false' pref-width='48' />
       <text id='report-text' text='~reportText'
-            font-size='3' align='TopLeft' word-wrapping='false' />
+            font-size='3' align='TopLeft' word-wrapping='false' pref-width='56' />
     </horizontal>
 
-    <horizontal spacing='1' pad='0'>
-      <text text='+num = live objects gained vs baseline (main leak signal) / sprite = current sprite count'
+    <horizontal spacing='1' pad='0' pad-top='2'>
+      <text text='+num = live objects gained vs baseline (main leak signal)'
             color='#AAAAAA' font-size='2.6' />
     </horizontal>
-
-    <!-- ───────── 設定 ───────── -->
-    <horizontal spacing='1' pad='0' pad-top='2'>
-      <text text='[Settings]' color='#00FFFF' />
-    </horizontal>
-
-    <toggle-setting text='Sample During Song'
-                    value='sampleDuringSong'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Also take snapshots while playing. The scan walks tens of thousands of objects and can drop a frame, so this is OFF by default. The snapshot right after a song is always taken regardless.' />
-
-    <toggle-setting text='Unload Unused Assets On Menu'
-                    value='unloadUnusedAssetsOnMenu'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='After each song, run GC and Resources.UnloadUnusedAssets in the menu, then record a second snapshot. Shows how much was actually reclaimed. This is a heavy call (hundreds of ms) - it never runs during a song. Takes effect from the next song.' />
-
-    <toggle-setting text='Track Ownership'
-                    value='trackOwnership'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Record which mod created each asset. Turning this OFF leaves you with totals only, no per-mod attribution.' />
-
-    <toggle-setting text='Track Instantiate'
-                    value='trackInstantiate'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Also hook Object.Instantiate. This is the hottest path (notes spawn every frame) - turn it OFF first if songs feel heavy. Takes effect on next game start.' />
-
-    <toggle-setting text='CPU Profiling'
-                    value='enableCpuProfiling'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Measure Update/LateUpdate/FixedUpdate time per mod. Takes effect on next game start.' />
-
-    <toggle-setting text='Debug Logging'
-                    value='debugLogging'
-                    apply-on-change='true'
-                    bind-value='true'
-                    hover-hint='Write verbose diagnostics to the BSIPA log (which hooks were applied, census counts).' />
-
-    <increment-setting text='Sample Interval (sec)'
-                       value='sampleIntervalSeconds'
-                       apply-on-change='true'
-                       on-change='on-sample-interval-changed'
-                       formatter='FormatInt'
-                       min='5' max='300' increment='5'
-                       hover-hint='How often to take a snapshot.' />
 
     <!-- 下が切れるのでスペーサー -->
     <button text='' pref-width='15' pref-height='8' interactable='false' />
 
   </settings-container>
+
+  <!-- 設定はモーダルに寄せた。タブ本体は計測結果を見るための面なので、
+       毎回スクロールしないと数値が読めない状態を避ける。 -->
+  <modal id='settings-modal' show-event='show-settings' hide-event='hide-settings'
+         click-off-closes='true' move-to-center='true'
+         size-delta-x='100' size-delta-y='76'>
+    <vertical spacing='1' pad='2'>
+
+      <toggle-setting text='Sample During Song'
+                      value='sampleDuringSong'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Also take snapshots while playing. The scan walks tens of thousands of objects and can drop a frame, so this is OFF by default. The snapshot right after a song is always taken regardless.' />
+
+      <toggle-setting text='Unload Unused Assets On Menu'
+                      value='unloadUnusedAssetsOnMenu'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='After each song, run GC and Resources.UnloadUnusedAssets in the menu, then record a second snapshot. Shows how much was actually reclaimed. Heavy (hundreds of ms) - never runs during a song. Takes effect from the next song.' />
+
+      <toggle-setting text='Track Ownership'
+                      value='trackOwnership'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Record which mod created each asset. Turning this OFF leaves you with totals only, no per-mod attribution.' />
+
+      <toggle-setting text='Track Instantiate'
+                      value='trackInstantiate'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Also hook Object.Instantiate. This is the hottest path (notes spawn every frame) - turn it OFF first if songs feel heavy. Takes effect on next game start.' />
+
+      <toggle-setting text='CPU Profiling'
+                      value='enableCpuProfiling'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Measure Update/LateUpdate/FixedUpdate time per mod. Takes effect on next game start.' />
+
+      <toggle-setting text='Debug Logging'
+                      value='debugLogging'
+                      apply-on-change='true'
+                      bind-value='true'
+                      hover-hint='Write verbose diagnostics to the BSIPA log (which hooks were applied, census counts).' />
+
+      <increment-setting text='Sample Interval (sec)'
+                         value='sampleIntervalSeconds'
+                         apply-on-change='true'
+                         on-change='on-sample-interval-changed'
+                         formatter='FormatInt'
+                         min='5' max='300' increment='5'
+                         hover-hint='How often to take a snapshot.' />
+
+      <button text='Close' click-event='hide-settings' pref-width='33' />
+
+    </vertical>
+  </modal>
 </bg>

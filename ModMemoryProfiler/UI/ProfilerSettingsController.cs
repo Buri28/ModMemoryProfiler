@@ -85,34 +85,38 @@ namespace ModMemoryProfiler.UI
 
         // ── 計測結果の表示 ────────────────────────────────────────
 
+        // 左カラム。プロセスとシステム全体の状況。
+        [UIValue("statsText")]
+        public string StatsText
+            => SessionRecorder.Instance?.BuildStats() ?? "Profiler is not running.";
+
+        // 右カラム。MOD別の増分ランキング。
         [UIValue("reportText")]
         public string ReportText
-            => SessionRecorder.Instance?.BuildReport(TopModCount) ?? "Profiler is not running.";
+            => SessionRecorder.Instance?.BuildReport(TopModCount) ?? "";
+
+        // 2カラムなので、どちらかだけ更新すると片方が古いままになる。必ず両方通知する。
+        private void RefreshBothColumns()
+        {
+            NotifyPropertyChanged(nameof(StatsText));
+            NotifyPropertyChanged(nameof(ReportText));
+        }
 
         [UIAction("on-refresh")]
         private void OnRefresh()
         {
             SessionRecorder.Instance?.SnapshotNow();
-            NotifyPropertyChanged(nameof(ReportText));
-        }
-
-        // GC + Resources.UnloadUnusedAssets を今すぐ実行する。
-        // GC 単体では Unity のアセット（テクスチャ・スプライト等）は解放されないため、
-        // 「GCボタン」ではなくこの2段構えである必要がある。
-        [UIAction("on-unload")]
-        private void OnUnload()
-        {
-            SessionRecorder.Instance?.UnloadNow();
-            NotifyPropertyChanged(nameof(ReportText));
+            RefreshBothColumns();
         }
 
         // カバー画像キャッシュを空にしてから解放する。
-        // Free Assets だけでは、キャッシュが参照を握っている分は解放されない。
+        // 解放だけを行う Free Assets ボタンは削除済み（実測で回収量が 0 個 / 0MB だったため）。
+        // こちらはキャッシュの参照を先に切るので、解放できる余地が残っている。
         [UIAction("on-purge")]
         private void OnPurge()
         {
             SessionRecorder.Instance?.PurgeCoverCacheNow();
-            NotifyPropertyChanged(nameof(ReportText));
+            RefreshBothColumns();
         }
 
         // 積み上がっているアセットの名前一覧を UserData に書き出す。
@@ -121,7 +125,7 @@ namespace ModMemoryProfiler.UI
         private void OnDump()
         {
             SessionRecorder.Instance?.DumpAssets();
-            NotifyPropertyChanged(nameof(ReportText));
+            RefreshBothColumns();
         }
 
         [UIAction("FormatInt")]

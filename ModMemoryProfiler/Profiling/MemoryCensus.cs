@@ -29,6 +29,48 @@ namespace ModMemoryProfiler.Profiling
         internal int LiveAssetCount;
         internal int UnfreedBundles;
         internal double MsPerFrame;
+
+        // プロセス全体のメモリ。(TOTAL) 行にだけ入り、MOD別の行では常に 0。
+        //
+        // Unity が把握しているのはプロセスの一部でしかない（実測で 2.9GB / 8.9GB）。
+        // 残りはネイティブ・Mono ランタイム・各MODのDLL・ドライバのバッファ等で、
+        // マネージドヒープにも Unity の確保総量にも現れない。
+        // ここが無いせいで「起動時に何GB使っているか」を毎回外部ツールに頼っており、
+        // ツールを回し忘れた計測が繰り返し無駄になったため、MOD自身が記録する。
+        internal long ProcessPrivateBytes;
+        internal long ProcessWorkingSetBytes;
+
+        // Unity が OS から「予約」している総量と、実際に「使用」している総量の差。
+        // ネイティブのアロケータは大きな塊単位で確保するため、オブジェクトを一度に大量生成すると
+        // 使用量以上にコミットが跳ねる。プロセスのコミットだけが増えて
+        // 確保総量もマネージドヒープも増えない現象の、有力な説明候補。
+        internal long UnityReservedBytes;
+
+        // Mono が OS から借りているヒープの総量（隙間を含む）。
+        //
+        // GC.GetTotalMemory が返すのは「生きているオブジェクトの合計」＝使用量であって、
+        // GC が抱えている総量ではない。Unity の Mono は Boehm（非圧縮GC）なので
+        // 回収後に詰め直しが行われず、ブロック内に1つでも生存オブジェクトがあると
+        // そのブロックを OS に返せない。結果として
+        // 「使用量は横ばいなのにヒープだけ増え続ける」が起こりうる。
+        //
+        // 実測で 使用量+235MB に対しプロセス+2,248MB という乖離が出ており、
+        // その差の最有力候補がここ。使用量だけ見ていては原理的に見えない。
+        //
+        // ※ GetAllocatedMemoryForGraphicsDriver は全行 0 を返して機能しなかったため、
+        //    その列と入れ替えている。
+        internal long MonoHeapBytes;
+
+        // システム全体の空き物理メモリと、コミット使用率。(TOTAL) 行にのみ入る。
+        // 「重くなる」の直接の引き金はここが尽きることなので、Beat Saber 単体の
+        // 使用量より優先して見るべき数字。外部ロガーなしで後から検証できるよう記録する。
+        internal long SystemFreeBytes;
+        internal double SystemCommitPercent;
+
+        // SongCore が読み込み済みのカスタム曲数。(TOTAL) 行にのみ入る。-1 は取得不可。
+        // 条件（曲あり/なし）を後から確実に判別するため、および
+        // 非同期の読み込みが完了しているかを見るために記録する。
+        internal int CustomLevelCount;
     }
 
     // ★中核その2: 生存している Unity アセットを走査し、実バイト数を MOD 別に合計する。
@@ -184,6 +226,18 @@ namespace ModMemoryProfiler.Profiling
                 Tally("Texture", OwnerOf(tx.GetInstanceID(), tx.GetType()), tx.name ?? "(null)");
             }
 
+            // AudioClip は曲名がそのまま名前に入るので、積み上がっている正体が一目で分かる。
+            // 実測で1譜面あたり約1.3個ずつ単調増加しており、解放漏れの最有力候補。
+            // loadType も併記する（同じ個数でも常駐かストリーミングかで実害が2桁違うため）。
+            foreach (AudioClip ac in Resources.FindObjectsOfTypeAll<AudioClip>())
+            {
+                if (ac == null) continue;
+                string load;
+                try { load = ac.loadType.ToString(); }
+                catch { load = "?"; }
+                Tally($"AudioClip[{load}]", OwnerOf(ac.GetInstanceID(), typeof(AudioClip)), ac.name ?? "(null)");
+            }
+
             // ── マネージド側 ──
             // マネージドヒープの MB を MOD 別に割ることは原理的にできないので、
             // 「どのクラスのインスタンスが何個生き残っているか」で代用する。
@@ -280,11 +334,30 @@ namespace ModMemoryProfiler.Profiling
             if (obj is RenderTexture rt)
                 return (long)rt.width * rt.height * (rt.depth > 0 ? 8 : 4) * Math.Max(1, rt.antiAliasing);
 
-            // AudioClip は GetRuntimeMemorySizeLong が 0 を返すため、実測では audioMB が
-            // 常に 0 になっていた。PCM 16bit 換算で概算する。
-            // 圧縮のままメモリに載っている場合は過大評価になるが、0 のまま見落とすより良い。
+            // AudioClip は GetRuntimeMemorySizeLong が 0 を返すため概算する。
+            //
+            // 以前は一律 PCM16 換算（samples × channels × 2）にしていたが、
+            // Beat Saber の曲は Ogg で、実際には圧縮のまま／ストリーミングで載っている。
+            // その結果 audioMB が実態の10倍以上に膨らみ、「音声が300MB増えた」という
+            // 誤った読みを生んでいた。loadType で分岐して桁を合わせる。
             if (obj is AudioClip clip)
-                return (long)clip.samples * clip.channels * 2;
+            {
+                long pcm = (long)clip.samples * clip.channels * 2;
+                switch (clip.loadType)
+                {
+                    // 展開済みで載っている。PCM そのもの。
+                    case AudioClipLoadType.DecompressOnLoad:
+                        return pcm;
+                    // 圧縮のまま常駐。Vorbis はおおむね 1/10 前後。
+                    case AudioClipLoadType.CompressedInMemory:
+                        return pcm / 10;
+                    // 再生位置ぶんのバッファしか持たない。定数で置く。
+                    case AudioClipLoadType.Streaming:
+                        return 256 * 1024;
+                    default:
+                        return pcm / 10;
+                }
+            }
 
             return 0;
         }
